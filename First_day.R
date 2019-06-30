@@ -25,6 +25,7 @@ my_rn>(mean(my_rn)-sd(my_rn))
 my_rn[my_rn>(mean(my_rn)-sd(my_rn))]
 my_rn.onesd<-my_rn[my_rn>(mean(my_rn)-sd(my_rn))]
 hist(my_rn)
+<<<<<<< HEAD
 abline(v= c((mean(my_rn)-sd(my_rn)),(mean(my_rn)+sd(my_rn)),mean(my_rn)),col= c(2,2,3))
 
 install.packages("tidyverse")
@@ -168,3 +169,6 @@ round(var(logratios),2)
 apply(logratios,2,var)
 plot(hours,apply(logratios,2,var))
 
+=======
+abline(v= c((mean(my_rn)-sd(my_rn)),(mean(my_rn)+sd(my_rn))),col= c(2,3))
+>>>>>>> ff9f1b7ab3ea75a5bdbdc3693ddba110a42aaf86
