@@ -49,33 +49,29 @@ plot.ecdf(logratios[,7][orf.is.TCA],add=TRUE,col="red")
 qqplot(logratios[,7],logratios[,7][orf.is.TCA==F])
 # they do not overlap because they are enriched differently
 ######################### t.test for TCA pathway enrichment ################################
-logR.not.TCA<-z7[orf.is.TCA==F]
-logR.yes.TCA<-z7[orf.is.TCA==T]
+logR.not.TCA<-logratios[,7][orf.is.TCA==F]
+logR.yes.TCA<-logratios[,7][orf.is.TCA==T]
 
-stderr1<-sqrt(
-  ((length(logR.not.TCA)-1)*var(logR.not.TCA)^2+(length(logR.yes.TCA)-1)*var(logR.yes.TCA)^2)/(length(logR.not.TCA)+length(logR.yes.TCA)-2)
-)*sqrt(1/length(logR.not.TCA) + 1/length(logR.yes.TCA))
-
-empirical_tvalue<-(mean(logR.yes.TCA)-mean(logR.not.TCA))/stderr1
+se.blue = sd(logratios$R7[!orf.is.TCA]) / sqrt(sum(!orf.is.TCA))
+se.red = sd(logratios$R7[orf.is.TCA]) / sqrt(sum(orf.is.TCA))
+se.diff = sqrt(se.blue^2 + se.red^2)
+empirical_tvalue<-(mean(logR.yes.TCA)-mean(logR.not.TCA))/se.diff
  
-lograt7box<-boxplot(z7~orf.is.TCA)
+lograt7box<-boxplot(logratios[,7]~orf.is.TCA)
 
-myResults<-t.test(z7~ orf.is.TCA)
+myResults<-t.test(logratios[,7]~ orf.is.TCA)
 myResults$statistic
 empirical_tvalue
 
 ######################### t.test for GM pathway enrichment ################################
-plot.ecdf(universe.logratios[,7])
-plot.ecdf(universe.logratios[,7][orf.is.GM==F],add=TRUE,col="blue")
-plot.ecdf(universe.logratios[,7][orf.is.GM==T],add=TRUE,col="red")
+plot.ecdf(logratios[,7])
+plot.ecdf(logratios[,7][orf.is.GM==F],add=TRUE,col="blue")
+plot.ecdf(logratios[,7][orf.is.GM==T],add=TRUE,col="red")
 qqplot(logratios[,7],logratios[,7][orf.is.GM==F])
 
 logR.not.GM<-universe.logratios[,7][orf.is.GM==F]
 logR.yes.GM<-universe.logratios[,7][orf.is.GM==T]
 
-var_yesno.gm<-sqrt(
-  (
-    (length(logR.not.GM)-1)*var(logR.not.GM)^2+(length(logR.yes.GM)-1)*var(logR.yes.GM)^2)/(length(logR.not.GM)+length(logR.yes.GM)-2))*sqrt(1/length(logR.not.GM) + 1/length(logR.yes.GM))
 
 empirical_tvalue.gm<(-mean(logR.yes.GM)+mean(logR.not.GM))/var_yesno.gm
 empirical_tvalue.gm2<-(-mean(logR.yes.GM)+mean(logR.not.GM))/myResults.gm$stderr
