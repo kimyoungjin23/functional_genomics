@@ -94,6 +94,9 @@ universe<-intersect(sgd.orf,rownames(logratios))
 # logratio of genes that are in universe
 universe.logratios<-logratios[which(rownames(logratios) %in% universe),]
 
+jjae1<-universe %in% rownames(logratios)
+jjae2<-intersect(rownames(logratios), universe)
+
 a<-apply(universe.logratios,2,mean)
 
 m<-apply(universe.logratios,2,sd)
@@ -113,26 +116,19 @@ sd0<-m[1]
 calc.zscore<- function(lt1){
   (lt1-mean0)/sd0
 }
-zscores1<-sapply(logratios[,1],calc.zscore)
+
+z1<-sapply(universe.logratios[,1],calc.zscore)
 hist(zscores)
 hist(zscores7)
 qqplot(zscores1,logratios[,1])
 # histogram of zscores and logratios at time point 1 seem very similar
-zscores7<-sapply(logratios[,7],calc.zscore)
+z7<-sapply(universe.logratios[,7],calc.zscore)
 
-plot.ecdf(zscores1)
-plot.ecdf(zscores7, col="red", add= TRUE)
-qqplot(zscores1,zscores7)
+p1 = pnorm(z1,lower.tail = F)
+hist(p1)
 
-order(zscores7) #min zscores7 index
-zscores7[2348]
-order(desc(zscores7)) #max zscores7 index
-zscores7[3684]
+p7 = pnorm(z7,lower.tail = F)
 
-p7<-ecdf(zscores7)
-p7(zscores7[3684])
-
-p7.norm<-2*pnorm(-abs(zscores7))
 disc1<-sum(p7.norm<1e-3) # there are 1104 p-values that are lower than 1e-3
 disc1
 eval<-length(zscores7)*1e-3#expected values of discoveries that have p val less than 1e-3
