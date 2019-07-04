@@ -1,0 +1,106 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+find the vignette in tximport
+```{r}
+library("tximport")
+vignette("tximport")
+tximport(files, type = "salmon", tx2gene= )
+```
+you can also consider using tximeta
+```{r}
+BiocManager::install("tximeta")
+library("tximeta")
+```
+
+this is because fasta and gtf information should follow around the analysis data. play around with the vignettes. 
+
+follow mikelove's github. bioc
+
+DESeq2 filters out a lot of outliers if sample size n<6. edgeR or limma are less hard. nonetheless, they all filter pretty well. 
+
+------------------------------------now, isoform analysis (splicing)---------------------------------------------
+paired end reads are good because they help you to assess fragment levels and biases. 
+go see rnaseqDTU workshop and F1000 by mike love. 
+gtexportal shows tissue specific exons
+you can browse by isoform. 
+look at reyes and huber 2017 pmc5778607
+
+drimsesq and dexseq both use annotated transcripts to come up with PSI
+
+dexseq: each tx gets a separate dispersion parameter. drimseq assumes equal dispersion per transcripts belonging to a gene. swimming downstream.
+
+ARMOR workflow charlette sonenson. 
+OFDR is what you use for stageR
+stageR can be used for any two-stage tests. not necessarily just for DTE and DTU
+
+--------------oligo analysis ---------------------
+```{r}
+BiocManager::install("yeastCC")
+library("yeastCC")
+yeastdata<-exprs(yeastCC)
+head(yeastdata)
+```
+create data matrix 'alpha' with pheromone and create 'my.var' that calculates the variance of all the logratios at each timepoint
+```{r}
+alpha<- grep("alpha",colnames(yeastdata))
+alpha<- yeastdata[,alpha]
+my.var<- apply(alpha,2,var, na.rm=TRUE)
+plot(my.var)
+```
+Find genes that have variance over all timepoints >0.4. 
+
+```{r}
+vg<-as.numeric(vector(length = nrow(alpha)))
+
+for(n in c(1:length(nrow(alpha)))){
+    vg[n]<-var(alpha[n,], na.rm=TRUE)
+}
+
+yeastvar<-function(x){var(x,na.rm=TRUE)}
+
+vg<- apply(alpha, 1, yeastvar)
+vg
+index<-which(vg>0.4)
+alpha.hi<-alpha[index,]
+dim(alpha.hi)
+heatmap(alpha.hi, Colv = NA)
+alpha.hi<-na.omit(alpha.hi)
+heatmap(alpha.hi)
+ac<-hclust(dist(alpha.hi))
+plot(ac)
+```
+
+process the clusters
+```{r}
+ca<-cutree(ac,5)
+length(ca)
+ca
+which(ca==4)
+ca.names<-names(which(ca==4))
+```
+
+clustering first 10 rows
+```{r}
+dist(alpha.hi[1:10,])
+dist(alpha.hi[ca.names,])
+crossprod()
+```
+

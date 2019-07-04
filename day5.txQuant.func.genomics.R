@@ -1,3 +1,5 @@
+#use multiQC for quality controls.
+
 BiocManager::install("tximport")
 library(tximport)
 setwd("./airway2/inst/extdata/quants")
@@ -6,3 +8,4 @@ files<- file.path(srrs, "quant.sf.gz")
 file.exists(files)
 
 txi<-tximport(files, type = "salmon", txOut = TRUE)
+BiocManager::install("rnaseqGene")

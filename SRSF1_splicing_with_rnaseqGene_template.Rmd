@@ -1,0 +1,29 @@
+---
+title: "SRSF1.splicing"
+author: "YJ"
+date: "7/4/2019"
+output: html_document
+---
+```{r}
+BiocManager::install('BiocStyle')
+
+```
+
+```{r style, echo=FALSE, message=FALSE, warning=FALSE, results="asis"}
+library("BiocStyle")
+library("knitr")
+library("rmarkdown")
+opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE,
+               cache = FALSE, fig.width = 5, fig.height = 5)
+```
+
+**R version**: `r R.version.string`
+
+**Bioconductor version**: `r BiocManager::version()`
+
+**Package**: `r packageVersion("rnaseqGene")`
+load important libraries 
+```{r}
+library("airway")
+```
+
