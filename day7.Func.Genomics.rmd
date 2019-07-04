@@ -51,6 +51,7 @@ ARMOR workflow charlette sonenson.
 OFDR is what you use for stageR
 stageR can be used for any two-stage tests. not necessarily just for DTE and DTU
 
+<<<<<<< HEAD
 --------------oligo analysis ---------------------
 ```{r}
 BiocManager::install("yeastCC")
@@ -103,4 +104,6 @@ dist(alpha.hi[1:10,])
 dist(alpha.hi[ca.names,])
 crossprod()
 ```
+=======
+>>>>>>> 4f8f74cf1393a1b9c867e5f41eaba1ddba6d3738
 
