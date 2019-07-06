@@ -4,3 +4,22 @@ author: "YJ"
 date: "7/6/2019"
 output: html_document
 ---
+
+refer to https://kkorthauer.org/fungeno2019/
+```{r, eval=FALSE, echo = TRUE}
+# workflow that includes many of the packages we'll explore
+BiocManager::install("simpleSingleCell")
+BiocManager::install("simpleSingleCell", dependencies = "Suggests")
+
+# individual packages not included in the above
+BiocManager::install("SCnorm")
+BiocManager::install("scDD")
+BiocManager::install("MAST")
+```
+```{r}
+library
+```
+
+--------------ChIP seq--------------------------------------------------
+
+
