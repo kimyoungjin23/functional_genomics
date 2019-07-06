@@ -105,4 +105,16 @@ dist(alpha.hi[ca.names,])
 sqrt(sum((alpha.hi[1,]-alpha.hi[2,])^2))
 
 ```
+hexamer counts
+```{r}
+dim(hexamerCounts)
+head(hexamerCounts)
+hexamerCounts[1:2,1:30]
+#genome wide frequency of each hexamer.
+p<-apply(hexamerCounts,2,mean)
+head(p)
+sum(p)
+ca
+
+```
 
