@@ -1,0 +1,50 @@
+---
+title: "day11.machinelearning.andmore"
+author: "YJ"
+date: "7/8/2019"
+output: html_document
+---
+
+```{r setup}
+BiocManager::install(c("mlbench", "adabag", "e1071", "randomForest", 
+    "party", "mboost", "rpart.plot", "formatR"))
+```
+
+```{r}
+data(iris)
+View(iris)
+pairs(iris[, 1:4], col = iris$Species)
+```
+```{r}
+library(party)
+x = ctree(Species ~ ., data = iris)
+plot(x)
+```
+
+```{r}
+library(caret)
+library(e1071)
+prediction = predict(x, iris)
+table(prediction)
+confusionMatrix(iris$Species, prediction)
+```
+
+```{r}
+
+```
+
+```{r}
+set.seed(42)
+n=2
+trainIdx = sample(c(TRUE, FALSE), size = nrow(iris), prob = c(n/10, 
+    1-n/10), replace = TRUE)
+irisTrain = iris[trainIdx, ]
+irisTest = iris[!trainIdx, ]
+nrow(irisTrain)
+traintree = ctree(Species ~., data=irisTrain)
+predicttest<-predict(traintree,irisTest)
+plot(traintree)
+cfm<-list()
+cfm[[n]]<-confusionMatrix(predicttest,irisTest$Species)
+```
+

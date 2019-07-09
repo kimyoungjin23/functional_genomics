@@ -21,5 +21,86 @@ library
 ```
 
 --------------ChIP seq--------------------------------------------------
+```{r load library: }
+BiocManager::install("chipseq")
+library(chipseq)
+BiocManager::install("cstest")
+data(cstest)
+cstest
+ctcf<-GRanges(cstest$ctcf)
+ctcf[100,]
 
+summary(width(ctcf))
+```
+
+```{r resize this ctcf chipseq data}
+ctcf.ext<-resize(ctcf, 200)
+cov.ctcf<-coverage(ctcf.ext)
+ctcf10<-ctcf.ext[which(seqnames(ctcf.ext)=="chr10"),]
+cov.ctcf10<-coverage(ctcf10)$chr10
+max<-max(coverage(ctcf10)$chr10)
+max.pos<-which(coverage(ctcf10)$chr10==max)
+```
+
+Compute the probability p that a random read would contribute to the coverage of a specific position in the genome. Remember that your reads have a length > 1. You may want to use seqlengths().
+```{r}
+p=200/sum(seqlengths(ctcf10)["chr10"])
+n=length(ctcf10)
+pbinom(max,size=n,prob=p, lower.tail = FALSE)
+```
+Because n is large and p is small, we can approximate the Binomial by the Poisson distribution. R has a pois family of functions that are equivalent to the binom and norm families. Before you can use these, you will need to compute the parameter lambda. Do this.
+
+lambda is same as E-value
+```{r}
+lambda<-n*p
+ppois(max,lambda,lower.tail = FALSE)
+```
+
+
+13) Next, you we want to get sense of what the poisson distribution looks like. Plot the probability density (not the p-values) for coverage depths k = 0:10 at a given position. What is the most probable value
+of k?
+```{r}
+plot(0:10-1,dpois(c(0:10)-1,lambda))
+hist(replicate(100,dbinom(0:10,n,p)))
+dbinom(0:10-1,n,p)
+which(dbinom(0:10-1,n,p)==max(dbinom(0:10,n,p)))
+```
+
+Out of the coverage counts in question 13, what is the minimum coverage level that you would you consider to be statistically significant, considering the size of chromosome 10? In other words, how high would a peak have to have an E-value < .05?
+
+```{r}
+0.05/p
+pvals=ppois(c(0:10)-1,lambda,lower.tail = FALSE)
+evals<-pvals * n
+names(evals)<-0:10
+round(evals, 2)
+```
+
+
+15) Now that we have identified a peak, we can look more closely at how the mapped sequencing reads are distributed around it. Specifically, we want to look at how the 5’ ends of the plus and minus strands differ. Unlike with resize() above, you will need to treat the plus and minus strands differently to isolate their 5’ positions. Separate ctcf10 by strand, and store the 5’ ends of each set.
+```{r}
+pstrand<-which(strand(ctcf10)=="+")
+nstrand<-which(strand(ctcf10)=="-")
+ctcf10.p<-ctcf10[pstrand]
+ctcf10.n<-ctcf10[nstrand]
+```
+
+
+16) For each strand, determine the set reads whose 5’ end maps within 400bp of the highest-peak position on chr10 (hint: subtract the position of the peak from the 5’ position of each read and use abs()). How many such reads are there for each strand?
+
+```{r}
+index.p<-unlist(which(coverage(ctcf10.p)["chr10"]==44))
+pp<-which(start(ctcf10.p)%in%index.p)
+sum(abs(start(ctcf10.p)-start(ctcf10.p)[41236])<400) #45
+index.n<-unlist(which(coverage(ctcf10.n)["chr10"]==36))
+nn<-which(end(ctcf10.n)%in%index.n)[1]
+sum(abs(end(ctcf10.n)-end(ctcf10.n)[42750])<401) #41
+```
+
+17. Plot an ECDF for the 5’ positions of the plus strand reads near your peak. Color it red. Then add a second ECDF for the minus strand and color it blue. You may have to use the xlim argument to make sure you can see the full range. How do the distributions differ? Does the initial estimate of the fragment length appear accurate? Explain.
+
+```{r}
+plot.ecdf(start(ctcf10.p)-start(ctcf10.p)[pp],col="red",xlim=c(-400,400))
+plot.ecdf(start(ctcf10.n)-start(ctcf10.n)[nn],col="blue",add=TRUE,xlim=c(-400,400))
+```
 
