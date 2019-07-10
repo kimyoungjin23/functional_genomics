@@ -1,0 +1,168 @@
+```{r, echo=FALSE, message=FALSE, results="hide", cache=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+set.seed(651)
+```
+
+This workflow is adapted from portions of the [simpleSingleCell Bioconductor workflow](https://www.bioconductor.org/help/workflows/simpleSingleCell/) by Aaron Lun, Davis McCarthy, and John Marioni. Some sections have been simplified, additional material has been added exploring additional methods, and exercises have been added.
+
+# Load data object created in previous vignette
+
+Here we continue our analysis of the peripheral blood mononuclear cell (PBMC) dataset from 10X Genomics [@zheng2017massively] that 
+we began in the previous vignette "Preprocessing and normalization of single-cell RNA-seq droplet data". We'll load in the `SingleCellExperiment` object we previously saved. 
+
+```{r}
+sce <- readRDS(file="pbmc_postQC.rds")
+```
+
+# Dimensionality reduction
+
+We use the `denoisePCA()` function with the assumed Poisson technical trend to choose the number of dimensions to retain after PCA.
+Recall that this involves a random initialization when `BSPARAM=IrlbaParam()`, which motivates the call to `set.seed()` to obtain reproducible results.
+
+```{r}
+library(scran)
+library(BiocSingular)
+new.trend <- makeTechTrend(x=sce)
+set.seed(1000)
+sce <- denoisePCA(sce, technical=new.trend, BSPARAM=IrlbaParam())
+ncol(reducedDim(sce, "PCA"))
+```
+
+```{r screeplot, fig.cap="Variance explained by each principal component in the PBMC dataset. The red line represents the chosen number of PCs."}
+plot(attr(reducedDim(sce), "percentVar"), xlab="PC",
+	ylab="Proportion of variance explained")
+abline(v=ncol(reducedDim(sce, "PCA")), lty=2, col="red")
+```
+
+Examination of the first few PCs already reveals some strong substructure in the data (Figure \@ref(fig:pcaplot-init)).
+
+```{r pcaplot-init, fig.cap="Pairwise PCA plots of the first three PCs in the PBMC dataset, constructed from normalized log-expression values of genes with positive biological components. Each point represents a cell, coloured by the log-number of expressed features.", fig.width=9}
+plotPCA(sce, ncomponents=3, colour_by="log10_total_features_by_counts")
+```
+
+This is recapitulated with a _t_-SNE plot (Figure \@ref(fig:tsneplot-init)).
+Again, note that we set `use_dimred=` to perform _t_-SNE on the denoised expression matrix.
+
+```{r tsneplot-init, fig.cap="_t_-SNE plots constructed from the denoised PCs of the PBMC dataset. Each point represents a cell and is coloured according to the log-number of expressed features."}
+set.seed(1000)
+library(scater)
+sce <- runTSNE(sce, use_dimred="PCA", perplexity=30)
+plotTSNE(sce, colour_by="log10_total_features_by_counts")
+```
+
+# Clustering with graph-based methods
+
+We build a shared nearest neighbour graph [@xu2015identification] and use the Walktrap algorithm to identify clusters.
+
+```{r}
+snn.gr <- buildSNNGraph(sce, use.dimred="PCA")
+clusters <- igraph::cluster_walktrap(snn.gr)
+sce$Cluster <- factor(clusters$membership)
+table(sce$Cluster)
+```
+
+We look at the ratio of the observed and expected edge weights to confirm that the clusters are modular.
+(We don't look at the modularity score itself, as that varies by orders of magnitudes across clusters and is difficult to interpret.)
+Figure \@ref(fig:clustermod) indicates that most of the clusters are well seperated, with few strong off-diagonal entries. 
+
+```{r clustermod, fig.cap="Heatmap of the log~10~-ratio of the total weight between nodes in the same cluster or in different clusters, relative to the total weight expected under a null model of random links."}
+cluster.mod <- clusterModularity(snn.gr, sce$Cluster, get.values=TRUE)
+log.ratio <- log2(cluster.mod$observed/cluster.mod$expected + 1)
+
+library(pheatmap)
+pheatmap(log.ratio, cluster_rows=FALSE, cluster_cols=FALSE, 
+    color=colorRampPalette(c("white", "blue"))(100))
+```
+
+We examine the cluster identities on a _t_-SNE plot (Figure \@ref(fig:tsneplot-cluster)) to confirm that different clusters are indeed separated.
+
+```{r tsneplot-cluster, fig.cap="_t_-SNE plots constructed from the denoised PCs of the PBMC dataset. Each point represents a cell and is coloured according to its cluster identity."}
+plotTSNE(sce, colour_by="Cluster")
+```
+
+# Marker gene detection
+
+We detect marker genes for each cluster using `findMarkers()`.
+Again, we only look at upregulated genes in each cluster, as these are more useful for positive identification of cell types in a heterogeneous population.
+
+```{r}
+markers <- findMarkers(sce, clusters=sce$Cluster, direction="up")
+```
+
+We examine the markers for cluster 11 in more detail.
+The upregulation of genes such as _PF4_ and _PPBP_ suggests that this cluster contains platelets or their precursors.
+
+```{r}
+marker.set <- markers[["11"]]
+head(marker.set[,1:8], 10) # only first 8 columns, for brevity
+```
+This is confirmed in Figure \@ref(fig:heatmap), where the transcriptional profile of cluster 11 is clearly distinct from the others.
+
+```{r heatmap, fig.wide=TRUE, fig.cap="Heatmap of mean-centred and normalized log-expression values for the top set of markers for cluster 11 in the PBMC dataset. Column colours represent the cluster to which each cell is assigned, as indicated by the legend."}
+chosen <- rownames(marker.set)[marker.set$Top <= 10]
+plotHeatmap(sce, features=chosen, exprs_values="logcounts", 
+    zlim=5, center=TRUE, symmetric=TRUE, cluster_cols=FALSE,
+    colour_columns_by="Cluster", columns=order(sce$Cluster),
+    show_colnames=FALSE)
+```
+
+***
+# Exercises
+
+## Parameters of SNN graphs
+
+Here we'll explore how different clusterings can be obtained just by varying the input parameters of the SNN graph. Use the `buildSNNGraph(sce, use.dimred="PCA")` function as before to build the graph, this time varying `k` = the number of nearest neighbors to consider (default is 10). Cluster on the graph as before using the Walktrap algorithm.  You can also vary other input parameters as described in `?buildSNNGraph`. Compare your new clustering with the original in `sce$Cluster` with a table.
+
+```{r}
+# your code here
+
+```
+
+Make a heatmap of the modularity score for your new clustering. Are you able to find a set of clustering parameters that reduces the amount of strong off-diagnonal entries?
+
+```{r}
+# your code here
+
+```
+
+## Differential expression post-clustering on noise
+
+Let's explore the statistical consequences of carrying out a differential test following clustering on random noise. Use the following random matrix of 500 features for 200 samples. We first confirm with a PCA plot that there is no structure in a kmeans clustering of 2 clusters.
+
+```{r}
+set.seed(2)
+y <- matrix(rnorm(100000), ncol=200)
+clusters <- kmeans(t(y), centers=2)$cluster
+
+pcs <- prcomp(y, center = TRUE,scale. = TRUE)
+plot(pcs$x[,1], pcs$x[,2], pch=16, col=clusters)
+```
+
+Next, use the `findMarkers` function to find genes that separate the `clusters`. Make a histogram of the resulting p-values, and check for any that have an adjusted p-value less than 0.05.
+
+```{r}
+# your code here
+
+```
+
+
+***
+
+# Save object for future use
+
+Having completed the basic analysis, we save the `SingleCellExperiment` object with its associated data to file.
+This avoids having to repeat all of the pre-processing steps described above prior to further analyses.
+
+```{r}
+saveRDS(sce, file="pbmc_data.rds")
+```
+
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
+
+# References

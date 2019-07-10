@@ -1,0 +1,546 @@
+```{r, echo=FALSE, message=FALSE, results="hide", cache=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+set.seed(651)
+```
+
+In this vignette, we'll first explore the `BSseq` class of objects for storing bisulfite sequencing data in R. Then we'll go through a reanalysis of a subset of the data from [@ford2017frequent], which concluded that there was not an appreciable reduction in transcription following forced genomewide promoter methylation. The full reanalysis is detailed in [@korthauer2018genome]. The analysis will make use of the `r Biocpkg("dmrseq")` Bioconductor package [@korthauer2018detection]. 
+
+# Download Ford et al. Data
+
+In the interest of computational efficiency, for this exercise we'll start with loading a `BSseq` object and only work with chromosome 20. We'll also look only at the control and induced samples (ignoring the withdrawn samples).
+
+> **Note**: the `dmrseq` function in the [DMR Analysis section](#dmr) will still take some time to run only on a single chromosome, since the p-value calculation involves permutation. On your laptop, you'll want to go get a hot drink while it runs. On a cluster, you can use multiple cores to obtain a faster runtime.
+
+**How this data was processed**: The original WGBS methylation counts for all cytosines are provided on GEO 
+(accession number [GSE102395](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE102395)). The CpG counts were extracted from these files and the data was read into R and bundled as a `BSseq` object. Metadata obtained from the `getGEO()` function and parsed from the filenames was added to the `pData` slot. You can find the code used to carry out these steps in this [Rmd](https://github.com/kdkorthauer/repressivecapacity/blob/master/Rmd/mCG-RNAseq-analysis.Rmd).
+
+```{r}
+dblink <- "https://www.dropbox.com/s/heipl6nsy90oekq/bsseq_chr20.rds?dl=1"
+dir.create("../data")
+
+bsfile <- "../data/bsseq_chr20.rds"
+if (!file.exists(bsfile))
+  download.file(dblink, dest=bsfile)
+```
+
+Read in chromosome 20 `BSseq` object and check out the metadata in the `pData` slot.
+
+```{r}
+library(bsseq)
+bs <- readRDS("../data/bsseq_chr20.rds")
+bs
+
+colnames(pData(bs))
+```
+
+# `BSseq` Object Anatomy
+
+Here we'll go over basic operations on objects of the class `BSseq`.
+
+```{r}
+class(bs)
+```
+
+Analogous to `SummarizedExperiment` and `SingleCellExperiment`, `BSseq` is a class for housing bisulfite sequencing data along with its metadata. The main components of the class are:
+
+* **M**: matrix of methylated counts (dimension loci $\times$ samples)
+* **Cov**: matrix of coverage counts (dimension loci $\times$ samples)
+* **chr**: vector of chromosome names (length loci)
+* **pos**: vector of basepair positions (length loci)
+* **pData**: data frame of sample metadata (dimension samples $\times$ any number of attributes)
+* **sampleNames**: vector of unique sample identifiers (length samples)
+
+These are used to construct a new object. For example:
+
+```{r}
+M <- matrix(0:8, 3, 3)
+Cov <- matrix(1:9, 3, 3)
+chr <- c("chr1", "chr2", "chr1")
+pos <- c(1,2,3)
+sampleNames = c("A","B", "C")
+pData <- data.frame(condition = 1:3,
+                    row.names = sampleNames)
+
+testBS <- BSseq(M = M, Cov = Cov,
+      chr = chr, pos = pos,
+      sampleNames = sampleNames,
+      pData=pData)
+```
+
+They can all also be accessed via the following getter methods:
+
+* `getCoverage()`: access M and Cov count matrices (use `type="M"` and `type="Cov"`, respectively)
+* `seqnames()`: access chromosome information (stored in an `Rle` object; use `as.character` to coerce to character vector)
+* `start()`: access basepair position information
+* `sampleNames()`: access vector of sample names
+* `pData()`: access metadata data frame
+
+```{r}
+# get M count
+getCoverage(testBS, type="M")
+
+# get Coverage count
+getCoverage(testBS, type="Cov")
+
+# get chr
+seqnames(testBS)
+
+# get position
+start(testBS)
+
+# get sample names
+sampleNames(testBS)
+
+# get sample metadata
+pData(testBS)
+```
+
+Note that you can subset the object by loci (rows) and/or samples (columns), just as you would a `SummarizedExperiment` object, and all the existing slots will be carry through the subsetting accordingly.
+
+```{r}
+testBS[2,]
+```
+
+***
+
+## Exercise
+
+Extract the methylation counts matrix from the `bs` object. Notice what class it is in.
+
+```{r}
+# your code here
+```
+
+Using the `pData()` function, tabulate how many samples are in each condition (stored in the `condition` column).
+
+```{r}
+# your code here
+```
+
+***
+
+## Test for DMC
+
+Here we'll carry out a simple test for differentially methylated cytosine at a specific locus using beta-binomial regression. Note that this cytosine was cherry-picked specifically for illustrative purposes (it was already discovered to be differentially methylated by region level analysis).
+
+```{r}
+ix <- 533680
+df <- data.frame(m = getCoverage(bs, type = "M")[ix,],
+                 cov = getCoverage(bs, type = "Cov")[ix,],
+                 prob = getMeth(bs, type = "raw")[ix,],
+                 treatment = pData(bs)$condition)
+df
+
+library(aod)
+fit <- betabin(cbind(m, cov-m) ~ treatment, ~ treatment, data=df)
+summary(fit)
+```
+
+***
+
+## Exercise
+
+What is the estimated difference in methylation levels between the methylated and control samples at this locus?
+
+```{r}
+# your code here
+```
+
+***
+
+## Exploratory analysis
+
+Here will look at some sample similarity metrics among the samples to verify that
+control samples are most similar to controls and ZF dox samples are more similar to 
+other ZF dox samples (this is indeed the case from the correlation matrix and
+clustering dendrogram below).
+
+```{r, fig.height = 3.5, fig.width = 5.75}
+library(DelayedMatrixStats)
+library(ggplot2)
+library(dendextend)
+library(dplyr)
+library(tidyr)
+cov.mat <- getCoverage(bs, type="Cov")
+filter <- pmax( 1*(rowSums2(cov.mat[,pData(bs)$condition == "Control"]) >= 5),
+                1*(rowSums2(cov.mat[,pData(bs)$condition == "Methylated"]) >= 5))
+filter <- which(filter > 0)
+bs.filt <- bs[-filter,]
+rm(cov.mat)
+cormat <- round(cor(as.matrix(getMeth(bs.filt, type="raw")),
+                    use = "pairwise.complete.obs", 
+                    method = "spearman"),2)
+rownames(cormat) <- colnames(cormat) <- labs <- paste0(pData(bs)$condition, 
+                                               pData(bs)$dox, 
+                                               "_Sample", 1:ncol(cormat))
+cormat <- data.frame(cormat) %>%
+  mutate(Sample1 = labs) %>%
+  gather("Sample2", "Correlation", 1:ncol(cormat))
+cormat$Sample1 <- factor(cormat$Sample1) 
+cormat$Sample2 <- factor(cormat$Sample2)
+ggplot(data = cormat, aes(x=Sample1, y=Sample2, fill=Correlation)) + 
+  geom_tile() +
+  scale_fill_gradient(low="white", high="red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# dendrogram
+d <- hclust(dist(t(as.matrix(as.data.frame(getMeth(bs.filt, type="raw")))),
+                 method="euclidean"))
+d$labels <- pData(bs)$condition
+dend <- as.dendrogram(d)
+labels_colors(dend) <-as.numeric(pData(bs)$condition)[order.dendrogram(dend)]
+plot(dend)
+rm(bs.filt)
+```
+
+Plots of coverage by group and sample:
+
+```{r, methplot, fig.width = 6, fig.height = 3}
+library(dmrseq)
+plotEmpiricalDistribution(bs, 
+                          bySample = TRUE,
+                          testCovariate = "condition",
+                          type = "Cov") +
+  guides(linetype=FALSE)
+```
+
+Plots of beta values by group and sample:
+
+```{r, methplot2, fig.width = 6, fig.height = 3}
+plotEmpiricalDistribution(bs, 
+                          bySample = TRUE,
+                          testCovariate = "condition",
+                          adj = 3) +
+  guides(linetype=FALSE)
+```
+
+
+# DMR Analysis {#dmr}
+
+We will use dmrseq to identify Differentially Methylated Regions (DMRs). 
+
+First we will filter the loci by coverage (remove those with zero coverage
+in at least one condition).
+
+```{r, filter}
+cov.mat <- getCoverage(bs, type="Cov")
+filter <- pmax( 1*(rowSums2(cov.mat[,pData(bs)$condition == "Control"]) == 0),
+                1*(rowSums2(cov.mat[,pData(bs)$condition == "Methylated"]) == 0))
+filter <- which(filter > 0)
+bs <- bs[-filter,]
+rm(cov.mat)
+```
+
+This removed `r length(filter)` out of `r nrow(bs)` loci (
+`r signif(100*length(filter)/nrow(bs), 2)`%). Now we'll run dmrseq.
+
+```{r, dmrseq, message=FALSE}
+library(BiocParallel)
+register(MulticoreParam(1))
+set.seed(399)
+resfile <- file.path("../data", "regions.rds")
+if (!file.exists(resfile)){
+  regions <- dmrseq(bs, testCovariate = "condition",
+                    bpSpan = 500,
+                    maxGap = 500,
+                    maxPerms = 10)
+  saveRDS(regions, file=resfile)
+}else{
+  regions <- readRDS(resfile)
+}
+sum(regions$qval < 0.1)
+regions$meanDiff <- meanDiff(bs, dmrs=regions, testCovariate="condition")
+```
+
+We'll add the raw mean methylation differences to the region summaries and plot the top 10 DMRs.
+
+```{r, fig.width = 6.5, fig.height= 3}
+regions$meanDiff <- meanDiff(bs, dmrs=regions, testCovariate="condition")
+plotDMRs(bs, regions=regions[1:10,], testCovariate="condition")
+```
+
+***
+
+## Exercise
+
+Plot a histogram of the sizes (width in basepairs) of the regions that are significant at the 0.05 level (by qvalue).
+
+```{r}
+# your code here
+```
+
+***
+
+# DE Analysis
+
+Here we carry out a differential expression analysis using the corresponding RNAseq data from [@ford2017frequent].
+
+First, we download the expression count matrix.
+
+```{r, eval = FALSE}
+# expression counts
+library(R.utils)
+file <- file.path("../data", "GSE102395_MCF7_ZF_DNMT3A_countstable.txt")
+if (!file.exists(file)){
+  download.file(url = "ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE102nnn/GSE102395/suppl/GSE102395%5FMCF7%5FZF%5FDNMT3A%5Fcountstable%2Etxt%2Egz",
+              destfile = paste0(file, ".gz"),
+              mode="wb")
+  gunzip(paste0(file, ".gz"))
+}
+```
+
+First we need to run the differential expression analysis. 
+
+```{r, expressionEDA, fig.width=8, fig.height=4}
+library(data.table)
+exp <- fread(file.path("../data/GSE102395_MCF7_ZF_DNMT3A_countstable.txt"))
+```
+
+We need to remove two duplicate genes. Examining the names of these genes, it appears it may stem from a classic [Microsoft Excel conversion error](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-016-1044-7?utm_content=buffer67f08&utm_medium=social&utm_source=twitter.com&utm_campaign=buffer) [@ziemann2016gene]. We also move the gene names to row names, and remove rows that have only zero values.
+
+```{r}
+# There are duplicate genes -- looks like a classic excel conversion error -- remove these
+dup <- which(table(exp$gene) > 1)
+names(dup)
+exp <- exp %>% dplyr::filter(!(gene %in% names(dup)))
+
+# move genes to rownames  
+rownames(exp) <- exp$gene
+exp <- as.matrix(exp %>% dplyr::select(-gene))
+
+# remove genes that are all zero
+allZero <- rowSums(exp==0)==ncol(exp)
+exp <- exp[!allZero,]
+
+```
+
+We construct the metadata to put in the `colData` of the DESeq2 dataset object.
+
+```{r}
+# strings to match the two comparison samples - control and ZF + DOX
+ctrl <- "MCF7_emptyVector|MCF7_ZF_DNMT3A_noDOX_rep"
+trt <- "MCF7_ZF_DNMT3A_DOX"
+
+# set up colData
+coldata <- data.frame(sample=colnames(exp)) %>%
+  mutate(condition = ifelse(grepl(ctrl, sample), "Control",
+                     ifelse(grepl(trt, sample), "Methylated", "Other"))) 
+```
+
+Here we construct the DESeq2 dataset.
+
+```{r}
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(countData = exp,
+                              colData = coldata,
+                              design = ~ condition)
+```
+
+Since we expect (and do indeed observe - see [@korthauer2018genome]) global shifts in the expected
+direction (i.e. lower expression for the methylated condition), we will not perform
+standard normalization using all genes. Instead, we'll compute size factors only on a set of control genes that
+were at least 10kb away from a ZF binding site or putative DMR (by dmrseq, with
+FDR level 0.25).
+To find these genes, we'll use the ZF ChIP-seq binding
+site data from the Supplementary table S1.
+
+```{r, norm}
+library(annotatr)
+if (!file.exists(file.path("../data/170506-1.txt"))){
+  download.file(url = "https://www.biorxiv.org/highwire/filestream/57972/field_highwire_adjunct_files/0/170506-1.txt",
+              destfile =  file.path("../data/170506-1.txt"))
+}
+ts1 <- fread(file.path("../data/170506-1.txt"), header=FALSE, skip=1)  #ZF Binding sites
+colnames(ts1) <- c("chr", "start", "end", "closest_gene_promoter", 
+                   "distance_to_nearest_promoter",
+                   "promoter_classification",
+                   "CpGisland_classification", 
+                   "genebody_classification",
+                   "enhancer_classification")
+annot = build_annotations(genome = 'hg19', annotations = 'hg19_genes_promoters')
+ol <- distanceToNearest(regions[regions$qval < 0.25,], annot)
+ol2 <- findOverlaps(regions[regions$qval < 0.25,], annot)
+dmr_genes <- unique(c(annot$symbol[ol@to[mcols(ol)$distance <= 10000]],
+                      annot$symbol[ol2@to]))
+dmr_genes <- dmr_genes[!is.na(dmr_genes)]
+zf_genes <- (ts1 %>%
+  dplyr::filter(distance_to_nearest_promoter <= 10000))$closest_gene_promoter
+
+exp <- data.frame(counts(dds)) %>% 
+  mutate(gene = rownames(dds)) %>%
+  gather(sample, count, 1:ncol(dds)) %>% 
+  mutate(condition = ifelse(grepl(ctrl, sample), "Control", "Methylated")) %>%
+  mutate(dox = ifelse(grepl("noDOX", sample), "No Dox", 
+                      ifelse(grepl("DOXremoval", sample), "Dox withdrawal", 
+                             "Dox")))
+
+norm_genes <- unique((exp %>%
+  dplyr::filter(!(gene %in% unique(c(dmr_genes, zf_genes)))))$gene)
+
+str(norm_genes)
+```
+
+We only compute sizefactors on the `r length(norm_genes)` control genes.
+We also filter out very lowly expressed genes (total counts in all samples together
+fewer than 10 or counts of zero in more than half of the samples), and include only genes on chromosome 20.
+We'll use the 8 no dox control versus the 4 dox methylated group for the DE comparison. 
+
+```{r, deseq}
+dds <- dds[, dds$condition == "Methylated" | 
+             (dds$condition == "Control" & grepl("noDOX", dds$sample)) ]
+dds <- dds[rowSums(counts(dds)) >= 10,]
+dds <- dds[rowSums(counts(dds)==0) <= 0.5,]
+dds <- estimateSizeFactors(dds, 
+                           controlGenes = rownames(dds) %in% norm_genes)
+table(dds$condition)
+rowData(dds)$control_expr <- rowMeans(counts(dds, normalize = TRUE)[,dds$condition == "Control"])
+
+library(EnsDb.Hsapiens.v86)
+location <- mapIds(EnsDb.Hsapiens.v86, keys=rownames(dds), 
+    column="SEQNAME", keytype="SYMBOL")
+rowData(dds)$chr <- location
+
+dds <- dds[rowData(dds)$chr == "20" & !is.na(rowData(dds)$chr),]
+```
+
+Finally, we actually run DEseq2.
+
+```{r}
+dds <- DESeq(dds)
+res <- results(dds)
+sum(res$padj < 0.05, na.rm = TRUE)
+res$control_expr <- rowData(dds)$control_expr
+dds <- dds[!is.na(res$padj)]
+res <- res %>% na.omit()
+```
+
+# Methylation vs Expression
+
+Here we'll create several figures exploring the relationship between methylation and expression,
+using effect size (methylation proportion difference) as the statistic of interest to 
+rank DMRs.
+
+##  Associate dmrseq DMRs with genes
+
+Next we need to associate each DMR with a gene by checking overlap with promoters.
+We'll use the promoter annotation from annotatr.
+
+```{r, annotatr-dmrseq}
+regions.sig <- regions[regions$qval < 0.1,]
+ol <- distanceToNearest(regions.sig, annot)
+dmrs <- regions.sig[ol@from[mcols(ol)$distance <= 2000],]
+dmrs$gene <- annot$symbol[ol@to[mcols(ol)$distance <= 2000]]
+dmrs$prom <- annot[ol@to[mcols(ol)$distance <= 2000],]
+  
+dmrs <- dmrs[!is.na(dmrs$gene),]
+```
+
+Now that we have a set of DMR-Gene associations, we'll add the the DE information 
+to the DMR data frame.
+
+```{r}
+# add DE results
+baseMeanPerLvl <- sapply( levels(dds$condition), 
+                          function(lvl) 
+                            rowMeans(counts(dds,normalized=TRUE)[,dds$condition == lvl] ))
+res <- cbind(res, baseMeanPerLvl)
+x <- match(dmrs$gene, rownames(res)) 
+dmrs <- dmrs[!is.na(x),]
+x <- x[!is.na(x)]
+res.dmrs <- res[x,]
+dmrs <- cbind(DataFrame(dmrs), res.dmrs)
+```
+
+There are `r sum(dmrs$padj < 0.05)` DE genes (at DESeq2 FDR < 0.05)
+with dmrseq FDR < 0.05 that are located within
+2kb of a gene promoter.
+
+## Scatterplot of methylation versus expression
+
+Now we create the scatterplot of methylation versus expression for dmrs.
+
+```{r, dmrs-5a-dmrseq, fig.width = 5, fig.height = 3.5}
+dmrsa <- data.frame(dmrs@listData) %>% 
+  dplyr::filter(control_expr > 50) %>%
+  mutate(sig = padj < 0.05,
+         FC = 2^log2FoldChange,
+         delta_mC = meanDiff) %>%
+  mutate(ptcol = ifelse(qval > 0.05, "Not significant (DMR)", 
+                    ifelse(sig, "DMR and DE", "Not significant (DE)"))) %>%
+  dplyr::filter(!is.na(log2FoldChange) & !is.na(sig) & !is.na(delta_mC)) 
+
+ggplot(dmrsa, aes(x = delta_mC, y = log2FoldChange)) +
+  geom_hline(yintercept=0, col="black") +
+  geom_hline(yintercept=0, col="white", linetype="dashed") +
+  geom_point(size=0.5, alpha=0.75, aes(color = sig)) + 
+  theme_bw() + 
+  xlab(expression(paste(Delta, "mCG in DMR"))) +
+  ylab("log2 fold change mRNA abundance") +
+  scale_color_manual(values=c("black", "red")) +
+  geom_smooth(method = "loess", span = 1) +
+  labs(color="Differentially\n Expressed")  +
+  ggtitle("dmrseq DMRs (chr20)") +
+  geom_vline(xintercept=0.30, 
+             linetype="dashed", color="grey20")
+```
+
+From this figure we see that more genes with high increased methylation percentage (above 30%) are transcriptionally repressed. Specifically, `r dmrsa %>% dplyr::filter(log2FoldChange < 0 & delta_mC > 0.30) %>% nrow()` genes with 30% methylation increase showed decreased expression (`r signif(dmrsa %>% dplyr::filter(log2FoldChange < 0 & delta_mC > 0.30) %>% nrow() / dmrsa %>% dplyr::filter(delta_mC > 0.30) %>% nrow(),3)*100`%, odds of `r signif(dmrsa %>% dplyr::filter(log2FoldChange < 0 & delta_mC > 0.30) %>% nrow()  / dmrsa %>% dplyr::filter(log2FoldChange > 0 & delta_mC > 0.30) %>% nrow(),3)`). Considering only DE at FDR 0.05, `r dmrsa %>% dplyr::filter(log2FoldChange < 0 & delta_mC > 0.30 & padj < 0.05) %>% nrow()` genes with 30% methylation increase showed decreased expression (`r signif(dmrsa %>% dplyr::filter(log2FoldChange < 0 & delta_mC > 0.30 & padj < 0.05) %>% nrow() / dmrsa %>% dplyr::filter(delta_mC > 0.30 & padj < 0.05) %>% nrow(),3)*100`%, odds of `r signif(dmrsa %>% dplyr::filter(log2FoldChange < 0 & delta_mC > 0.30 & padj < 0.05) %>% nrow()  / dmrsa %>% dplyr::filter(log2FoldChange > 0 & delta_mC > 0.30 & padj < 0.05) %>% nrow(),3)`)
+
+***
+
+## Exercise
+
+What is the pearson correlation between absolute methylation difference and expression foldchange?
+
+```{r}
+# your code here
+```
+
+***
+
+## Scatterplot with dmrseq statistic
+
+Here we'll create a scatterplot exploring the relationship between methylation and expression
+using the dmrseq statistic as the statistic of interest to 
+rank DMRs. This should be more robust than ordering regions simply on their average methylation difference.
+
+
+```{r, dmrs-5a-dmrseq-alt, fig.width = 5, fig.height = 3.5}
+ggplot(dmrsa, aes(x = stat, y = log2FoldChange)) +
+  geom_hline(yintercept=0, col="black") +
+  geom_hline(yintercept=0, col="white", linetype="dashed") +
+  geom_point(size=0.5, alpha=0.75, aes(color = ptcol)) + 
+  theme_bw() + 
+  xlab("Region test statistic") +
+  ylab("log2 fold change mRNA abundance") +
+  scale_color_manual(values=c("red", "black", "grey")) +
+  geom_smooth(method = "loess", span = 1) +
+  labs(color="Significance")  +
+  ggtitle("dmrseq DMRs (chr20)") +
+  geom_vline(xintercept=min(dmrsa$stat[dmrsa$qval<0.05]), 
+             linetype="dashed", color="grey20")
+```
+
+We can see that the relationship between increased methylation and decreased expression is even clearer using the dmrseq region statistic. 
+
+***
+
+## Exercise
+
+What is the pearson correlation between methylation statistic and expression fold change?
+
+```{r}
+# your code here
+```
+
+***
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
+
+# References
