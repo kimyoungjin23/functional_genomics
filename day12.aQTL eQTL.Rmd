@@ -1,0 +1,49 @@
+---
+title: "day12.eqtl aqtl"
+author: "YJ"
+date: "7/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library()
+bremexp<-read.delim(c("Brem.expression.txt"))
+bremgen<-read.delim(c("Brem.genotype.txt"))
+brem.ma<-read.delim(c("Brem.marker.annotation.txt"))
+load("psamScores.rda")
+dim(PSAM.scores) #[1] 6516  123
+pORF<-rownames(PSAM.scores)
+ps<-PSAM.scores[pORF %in% bremexp$ORF,] #5397 genes
+
+pss<-ps[,sample(1:ncol(ps),3)]
+plot.ecdf(pss[,1])
+plot.ecdf(pss[,2],add=TRUE, col = "red")
+plot.ecdf(pss[,3],add=TRUE, col = "blue")
+load("psams.rda")
+class(PSAMs)
+maxps<-apply(pss,2,max)
+outer(maxps,maxps,"/")
+width<-vector()
+orfname<-vector()
+for(n in 1:length(PSAMs)){
+  width[n]<-ncol(PSAMs[[n]])
+  orfname[n]<-names(PSAMs[n])
+}
+pw<-data.frame(orf=orfname, width=width)
+plot.ecdf(pw[,2])
+
+```
+Get the maximum observed promoter affinity for each transcription factor in PSAM.scores. Which transcription factor has the highest maximum observed affinity? How many times larger/smaller is the maximum observed affinity relative to the optimal sequence indicated by the PSAM? Does this make sense?
+makes sense because if you have more than one perfect motif match in the "promoter region" you would have max psam score higher than the optimal scale. (e.g., PSAMscore( GGGGGG) = 1x1x1x1x1x1)
+```{r}
+maxps<-apply(ps,2,max)
+maxps<-data.frame(Orf = names(maxps), Max_Psam_score = maxps)
+bestmaxps<-filter(maxps,maxps[,2]==max(maxps[,2])) #ADR1 18.91956
+PSAMs[["ADR1"]]
+sum(PSAMs[["ADR1"]])
+psw<-data.frame(orf=maxps[,1], width = pw[,2], maximum_psam_score = maxps[,2])
+cor(psw[,2],psw[,3])
+plot(psw[,2],psw[,3]) 
+```
+
